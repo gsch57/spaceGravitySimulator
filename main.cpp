@@ -1,105 +1,81 @@
-#include "SDL2/SDL.h"
+
 #include <cmath>
 #include <iostream>
-
-#define WIDTH 800  // Screen width
-#define HEIGHT 600 // Screen height
-
-void DrawCircle(SDL_Renderer *renderer, int32_t centreX, int32_t centreY, int32_t radius)
-{
-    SDL_SetRenderDrawColor(renderer, 0, 0, 250, 255);
-
-    const int32_t diameter = (radius * 2);
-
-    int32_t x = (radius - 1);
-    int32_t y = 0;
-    int32_t tx = 1;
-    int32_t ty = 1;
-    int32_t error = (tx - diameter);
-
-    while (x >= y)
-    {
-        //  Each of the following renders an octant of the circle
-        SDL_RenderDrawPoint(renderer, centreX + x, centreY - y);
-        SDL_RenderDrawPoint(renderer, centreX + x, centreY + y);
-        SDL_RenderDrawPoint(renderer, centreX - x, centreY - y);
-        SDL_RenderDrawPoint(renderer, centreX - x, centreY + y);
-        SDL_RenderDrawPoint(renderer, centreX + y, centreY - x);
-        SDL_RenderDrawPoint(renderer, centreX + y, centreY + x);
-        SDL_RenderDrawPoint(renderer, centreX - y, centreY - x);
-        SDL_RenderDrawPoint(renderer, centreX - y, centreY + x);
-
-        if (error <= 0)
-        {
-            ++y;
-            error += ty;
-            ty += 2;
-        }
-
-        if (error > 0)
-        {
-            --x;
-            tx += 2;
-            error += (tx - diameter);
-        }
-    }
-}
+#include "Planete.hpp"
+#include "Graphic.hpp"
+#include <vector>
+#include <stdlib.h> /* srand, rand */
+#include <time.h>   /* time */
 
 int main(int argc, char *argv[])
 {
-    SDL_Init(SDL_INIT_VIDEO);
+    Graphic *sdl = new Graphic;
+    SDL_Renderer *renderer = nullptr;
 
-    SDL_Window *window = NULL;
-
-    window = SDL_CreateWindow(
-        "Space Gravity Simulation",
-        SDL_WINDOWPOS_CENTERED,
-        SDL_WINDOWPOS_CENTERED,
-        WIDTH, HEIGHT,
-        0);
-
-    if (window == NULL)
+    if (sdl->init() < 0)
     {
-        std::cerr << "Error: Unable to create window: " << SDL_GetError() << std::endl;
+        delete sdl;
         return -1;
     }
-
-    SDL_Renderer *renderer = NULL;
-    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-
-    if (renderer == NULL)
-    {
-        std::cerr << "Error: Unable to create renderer: " << SDL_GetError() << std::endl;
-        SDL_DestroyWindow(window);
-        return -1;
-    }
-
-    SDL_Event event;
+    renderer = sdl->getRenderer();
     bool finish = false;
 
+    double sunSize = 139100.0; // in KM
+    double earthSize = 12756;  // in KM
+    double distance = 900000;
+    // Taille de l'écran en km (échelle choisie)
+    double screen_scale = 1500.0;
+
+    // Calcul du diamètre réel du Soleil en pixels
+    double sun_size_by_scale = (1500.0 / WIDTH) * sunSize;
+
+    // Calcul du facteur d'échelle pour le rayon du Soleil
+    double facteurEchelle = sun_size_by_scale / 50.0;
+
+    std::vector<Planete *> planetes;
+
+    // Initialisation des planètes avec l'échelle de masse
+    Planete *soleil = new Planete(renderer, WIDTH / 2, HEIGHT / 2, 198900000, 0, 0, sunSize / facteurEchelle, {255, 255, 0, 255}); // Soleil (masse en kg)
+    Planete *terre = new Planete(renderer, 100, HEIGHT / 2, 19320.7, 0, 52910, 10, {0, 255, 0, 255});                              // Terre (masse en kg, vitesse en m/s)
+    Planete *yolo = new Planete(renderer, 99, HEIGHT / 2 + 5, 19320.7, 0, 0, 4, {50, 125, 255, 255});
+    /* initialize random seed: */
+    srand(time(NULL));
+    for (int i = 0; i < 100; i++)
+    {
+        planetes.push_back(new Planete(renderer, rand() % WIDTH + 1, rand() % HEIGHT + 1, rand() % 19890000 + 1000, 0, rand() % 5000 - 5000, 4, {Uint8(rand() % 255), Uint8(rand() % 255), Uint8(rand() % 255), 255}));
+    }
+    planetes.push_back(yolo);
+    planetes.push_back(terre);
+    planetes.push_back(soleil);
+    double factor = 1;
+    bool start = false;
     while (!finish)
     {
-        while (SDL_PollEvent(&event))
+        sdl->cleanWindow();
+        int action = sdl->retrieveUserInteraction();
+        if (action == -1)
+            finish = true;
+        if (action == 1)
+            start = !start;
+        int index = 0;
+        for (int i = 0; i < 300; i++)
         {
-            if (SDL_QUIT == event.type)
-                finish = true;
-            if (SDL_KEYDOWN == event.type)
+            for (int index = 0; index < planetes.size() - 1; index++)
             {
-                if (SDLK_ESCAPE == event.key.keysym.sym)
-                    finish = true;
+                if (i == 0)
+                    planetes[index]->clearTrajectory();
+                planetes[index]->computePosition(planetes, 0.0000002, index, i == 0 && start ? false : true);
             }
+            for (int index = 0; index < planetes.size() - 1; index++)
+                planetes[index]->addToTrajectory();
         }
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255); // renderer, r, g, b, a
-        SDL_RenderClear(renderer);
-        DrawCircle(renderer, 100, 100, 40);
+        for (int index = 0; index < planetes.size(); index++)
+            planetes[index]->draw();
+        for (int index = 0; index < planetes.size(); index++)
+            if (planetes[index]->needDelete(WIDTH, HEIGHT))
+                planetes.erase(planetes.begin() + index);
         // Show the renderered frame
-        SDL_RenderPresent(renderer);
-        SDL_Delay(100);
+        sdl->refreshWindow(10);
     }
-
-    SDL_DestroyWindow(window);
-    SDL_DestroyRenderer(renderer);
-    SDL_Quit();
-
     return 0;
 }
